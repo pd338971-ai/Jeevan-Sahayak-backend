@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   gender: { type: String, default: 'Not Specified' },
   dob: { type: String, default: '' },
 
-  // Data Sync
+  // Data Sync ke liye
   syncedData: {
     reminders: { type: Array, default: [] },
     notes: { type: Array, default: [] },
@@ -15,7 +15,7 @@ const userSchema = new mongoose.Schema({
     lastSyncedAt: { type: Date, default: Date.now }
   },
 
-  // Push Notification
+  // Push Notification ke liye
   pushSubscription: {
     type: Object,
     default: null
@@ -23,3 +23,4 @@ const userSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
+    
