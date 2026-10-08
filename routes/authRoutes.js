@@ -9,7 +9,7 @@ const User = require('../models/User');
 // Temporary in-memory OTP store
 const otpStore = {};
 
-// Web Push Configuration
+// Web Push Setup
 webpush.setVapidDetails(
   'mailto:support@jeevansahayak.com',
   process.env.VAPID_PUBLIC_KEY || 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U',
@@ -17,7 +17,7 @@ webpush.setVapidDetails(
 );
 
 // -----------------------------------------------------------
-// 1. SEND OTP (Fast2SMS के ज़रिए मोबाइल पर SMS)
+// 1. SEND OTP (Fast2SMS Quick SMS - No Verification Needed)
 // -----------------------------------------------------------
 router.post('/send-otp', async (req, res) => {
   try {
@@ -26,28 +26,30 @@ router.post('/send-otp', async (req, res) => {
       return res.status(400).json({ success: false, message: 'कृपया 10 अंकों का मान्य मोबाइल नंबर दर्ज करें' });
     }
 
-    // 6-digit OTP जनरेट करें
+    // 6-अंकों का OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     otpStore[phone] = {
       otp: otp,
-      expiresAt: Date.now() + 5 * 60 * 1000 // 5 मिनट वैधता
+      expiresAt: Date.now() + 5 * 60 * 1000 // 5 मिनट एक्सपायरी
     };
 
     console.log(`🔑 OTP for ${phone}: ${otp}`);
 
-    // Fast2SMS API कॉल (सीधे फोन पर मैसेज भेजना)
     const apiKey = process.env.FAST2SMS_API_KEY;
     if (apiKey) {
       try {
-        await axios.get('https://www.fast2sms.com/dev/bulkV2', {
+        // route: 'q' se direct phone par Quick SMS jayega bina domain verification ke
+        const response = await axios.get('https://www.fast2sms.com/dev/bulkV2', {
           params: {
             authorization: apiKey,
-            variables_values: otp,
-            route: 'otp',
+            route: 'q',
+            message: `Jeevan Sahayak verification code: ${otp}`,
+            language: 'english',
+            flash: 0,
             numbers: phone
           }
         });
-        console.log(`📱 SMS successfully sent to ${phone}`);
+        console.log('📱 Fast2SMS Response:', response.data);
       } catch (smsErr) {
         console.error('Fast2SMS Error:', smsErr.response?.data || smsErr.message);
       }
@@ -56,7 +58,7 @@ router.post('/send-otp', async (req, res) => {
     return res.json({
       success: true,
       message: 'OTP आपके मोबाइल नंबर पर भेज दिया गया है',
-      devOtp: otp // बैकअप के लिए
+      devOtp: otp
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'OTP भेजने में त्रुटि' });
@@ -64,7 +66,7 @@ router.post('/send-otp', async (req, res) => {
 });
 
 // -----------------------------------------------------------
-// 2. REGISTER / CREATE PROFILE
+// 2. USER REGISTRATION
 // -----------------------------------------------------------
 router.post('/register', async (req, res) => {
   try {
@@ -74,7 +76,6 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, message: 'सभी जानकारी भरना अनिवार्य है' });
     }
 
-    // OTP वेरिफिकेशन
     if (!otpStore[phone] || otpStore[phone].otp !== otp) {
       return res.status(400).json({ success: false, message: 'गलत या एक्सपायर्ड OTP' });
     }
@@ -96,7 +97,7 @@ router.post('/register', async (req, res) => {
     });
 
     await newUser.save();
-    delete otpStore[phone]; // OTP साफ़ करें
+    delete otpStore[phone];
 
     return res.status(201).json({ success: true, message: 'प्रोफ़ाइल सफलतापूर्वक बन गई!' });
   } catch (err) {
@@ -153,7 +154,7 @@ router.post('/admin/login', (req, res) => {
 });
 
 // -----------------------------------------------------------
-// 5. ADMIN DASHBOARD STATS & USERS
+// 5. ADMIN DASHBOARD DATA
 // -----------------------------------------------------------
 router.get('/admin/dashboard', async (req, res) => {
   try {
@@ -169,7 +170,7 @@ router.get('/admin/dashboard', async (req, res) => {
 });
 
 // -----------------------------------------------------------
-// 6. PASSWORD RESET (OTP से)
+// 6. PASSWORD RESET VIA OTP
 // -----------------------------------------------------------
 router.post('/reset-password', async (req, res) => {
   try {
@@ -233,4 +234,4 @@ router.post('/push/subscribe', async (req, res) => {
 });
 
 module.exports = router;
-        
+      
