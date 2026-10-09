@@ -1,36 +1,48 @@
 require('dotenv').config();
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
-const connectDB = require('./config/db');
-const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
-// Database Connect
-connectDB();
-
-// Middlewares
+// Middleware
 app.use(cors());
-app.use(express.json());
-
-// Main Routes
-app.use('/api/auth', authRoutes);
-
-app.get('/', (req, res) => {
-  res.send('Jeevan Sahayak API Server is Live & Running!');
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server listening on http://localhost:${PORT}`);
-});
-// Body size limit badhayein taaki PDF upload fail na ho
+// Body limit badhai hai taaki PDF / notes upload ho sakein
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
-// Routes import
+// Routes Import (Sirf ek baar)
 const authRoutes = require('./routes/authRoutes');
-const materialRoutes = require('./routes/materialRoutes');
+let materialRoutes;
+try {
+  materialRoutes = require('./routes/materialRoutes');
+} catch (e) {
+  console.log('materialRoutes not loaded yet');
+}
 
+// Routes Use
 app.use('/api/auth', authRoutes);
-app.use('/api/materials', materialRoutes);
+if (materialRoutes) {
+  app.use('/api/materials', materialRoutes);
+}
+
+// Health Check Route
+app.get('/', (req, res) => {
+  res.send('Jeevan Sahayak Backend is Running Successfully 🚀');
+});
+
+// Database Connection
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
+
+mongoose.connect(MONGO_URI)
+  .then(() => {
+    console.log('✅ MongoDB Connected Successfully');
+    app.listen(PORT, () => {
+      console.log(`🚀 Server listening on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('❌ MongoDB Connection Error:', err.message);
+  });
+  
