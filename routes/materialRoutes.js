@@ -73,4 +73,35 @@ router.delete('/admin/delete/:id', async (req, res) => {
 });
 
 module.exports = router;
-    
+// GET: Fetch all pending student submissions for review queue
+router.get('/admin/pending', async (req, res) => {
+  try {
+    const pendingMaterials = await Material.find({ status: 'pending' })
+      .select('-fileData') // Initial list load fast rakhne ke liye fileData exclude kar sakte hain
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      success: true,
+      count: pendingMaterials.length,
+      materials: pendingMaterials
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Pending materials fetch karne mein dikkat aayi',
+      error: err.message
+    });
+  }
+});
+
+// GET: Single Material Details with full fileData (PDF view karne ke liye)
+router.get('/details/:id', async (req, res) => {
+  try {
+    const item = await Material.findById(req.params.id);
+    if (!item) return res.status(404).json({ success: false, message: 'Material nahi mila' });
+    return res.json({ success: true, material: item });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Error fetching details' });
+  }
+});
+
