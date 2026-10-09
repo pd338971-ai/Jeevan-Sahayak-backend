@@ -234,4 +234,21 @@ router.post('/push/subscribe', async (req, res) => {
 });
 
 module.exports = router;
-      
+// -----------------------------------------------------------
+// DELETE USER BY ADMIN
+// -----------------------------------------------------------
+router.delete('/admin/user/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedUser = await User.findByIdAndDelete(id);
+
+    if (!deletedUser) {
+      return res.status(404).json({ success: false, message: 'User nahi mila' });
+    }
+
+    return res.json({ success: true, message: 'User successfully delete ho gaya' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'User delete karne me error aaya', error: err.message });
+  }
+});
+
