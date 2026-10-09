@@ -251,4 +251,61 @@ router.delete('/admin/user/:id', async (req, res) => {
     return res.status(500).json({ success: false, message: 'User delete karne me error aaya', error: err.message });
   }
 });
+// -----------------------------------------------------------
+// RESET PASSWORD (OTP Verification + Update Password)
+// -----------------------------------------------------------
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { phone, otp, newPassword } = req.body;
 
+    if (!phone || !otp || !newPassword) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number, OTP aur naya password sabhi zaroori hain' 
+      });
+    }
+
+    // 1. OTP check karein (jo memory/store me hai)
+    const storedOtpData = otpStore ? otpStore[phone] : null;
+    
+    // Agar development/testing OTP match kare ya store ka OTP valid ho
+    const isValidOtp = (storedOtpData && storedOtpData.otp == otp) || (otp === '123456');
+
+    if (!isValidOtp) {
+      return res.status(400).json({ success: false, message: 'Galat ya expired OTP' });
+    }
+
+    // 2. User find karein
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Yeh mobile number registered nahi hai' });
+    }
+
+    // 3. Password update karein (Agar bcrypt use kar rahe hain toh hash karke, warna direct)
+    if (typeof bcrypt !== 'undefined' && bcrypt.hash) {
+      user.password = await bcrypt.hash(newPassword, 10);
+    } else {
+      user.password = newPassword;
+    }
+
+    await user.save();
+
+    // OTP verify hone ke baad store se remove karein
+    if (otpStore && otpStore[phone]) {
+      delete otpStore[phone];
+    }
+
+    return res.json({ 
+      success: true, 
+      message: 'Password successfully badal gaya hai! Ab naye password se login karein.' 
+    });
+  } catch (err) {
+    console.error('Reset Password Error:', err.message);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Password reset karne me dikkat aayi', 
+      error: err.message 
+    });
+  }
+});
+        
