@@ -17,9 +17,9 @@ router.post('/chat', async (req, res) => {
       });
     }
 
-    // Google Gemini 1.5 Flash official stable endpoint
+    // Updated Google Gemini 3.8 Flash endpoint
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
       {
         contents: [
           {
@@ -30,7 +30,7 @@ router.post('/chat', async (req, res) => {
       },
       {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 25000 // 25 seconds timeout
+        timeout: 25000
       }
     );
 
@@ -53,4 +53,4 @@ router.post('/chat', async (req, res) => {
 });
 
 module.exports = router;
-      
+    
