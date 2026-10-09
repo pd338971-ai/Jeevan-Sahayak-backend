@@ -17,10 +17,13 @@ router.post('/chat', async (req, res) => {
       });
     }
 
-    // Updated Google Gemini 3.8 Flash endpoint
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
-      {
+    // Google Gemini 3.8 Flash endpoint with extended timeout
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+
+    const response = await axios({
+      method: 'POST',
+      url: url,
+      data: {
         contents: [
           {
             role: 'user',
@@ -28,22 +31,22 @@ router.post('/chat', async (req, res) => {
           }
         ]
       },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 25000
-      }
-    );
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 45000 // 45 seconds to prevent premature timeout
+    });
 
     const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!reply) {
-      return res.status(500).json({ success: false, message: 'AI model ne koi text generate nahi kiya' });
+      return res.status(500).json({ success: false, message: 'AI model ne koi response generate nahi kiya' });
     }
 
     return res.json({ success: true, reply });
   } catch (err) {
-    console.error('Gemini API Error Detail:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
+    console.error('Gemini API Error Detail:', errorMsg);
     return res.status(500).json({ 
       success: false, 
       message: 'AI se jawab pane me dikkat aayi',
@@ -53,4 +56,4 @@ router.post('/chat', async (req, res) => {
 });
 
 module.exports = router;
-    
+      
