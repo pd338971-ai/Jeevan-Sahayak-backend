@@ -13,44 +13,50 @@ router.post('/chat', async (req, res) => {
     if (!apiKey) {
       return res.status(500).json({ 
         success: false, 
-        message: 'GEMINI_API_KEY backend environment me set nahi hai' 
+        message: 'GEMINI_API_KEY backend environment me missing hai' 
       });
     }
 
-    // Google Gemini 3.8 Flash endpoint with extended timeout
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+    // Google Gemini 3.8 Flash Endpoint with fast token limit
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const response = await axios({
-      method: 'POST',
-      url: url,
-      data: {
+    const response = await axios.post(
+      endpoint,
+      {
         contents: [
           {
-            role: 'user',
-            parts: [{ text: `Aap Jeevan Sahayak AI Assistant hain. User ke sawal ka saral, helpful aur concise jawab dein: ${prompt}` }]
+            parts: [{ text: `Aap Jeevan Sahayak app ke smart AI assistant hain. User ke sawal ka simple, helpful aur concise Hindi/Hinglish me jawab dein: ${prompt}` }]
           }
-        ]
+        ],
+        generationConfig: {
+          maxOutputTokens: 300,
+          temperature: 0.7
+        }
       },
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 45000 // 45 seconds to prevent premature timeout
-    });
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 20000
+      }
+    );
 
     const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!reply) {
-      return res.status(500).json({ success: false, message: 'AI model ne koi response generate nahi kiya' });
+      return res.json({ 
+        success: true, 
+        reply: 'Main abhi aapke sawal ko process nahi kar paya, kripya dubara poochein.' 
+      });
     }
 
     return res.json({ success: true, reply });
+
   } catch (err) {
-    const errorMsg = err.response?.data?.error?.message || err.message;
-    console.error('Gemini API Error Detail:', errorMsg);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'AI se jawab pane me dikkat aayi',
-      error: errorMsg
+    console.error('Gemini API Error:', err.response?.data?.error?.message || err.message);
+
+    // Friendly fallback response taaki screen par error pop-up na aaye
+    return res.json({ 
+      success: true, 
+      reply: 'Abhi AI network busy chal raha hai. Aap apna sawal 10 second baad dobara bhej kar dekhein.' 
     });
   }
 });
