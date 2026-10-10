@@ -6,60 +6,60 @@ router.post('/chat', async (req, res) => {
   try {
     const { prompt } = req.body;
     if (!prompt) {
-      return res.status(400).json({ success: false, message: 'Prompt zaroori hai' });
+      return res.status(400).json({ success: false, reply: 'Prompt zaroori hai' });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ 
-        success: false, 
-        message: 'GEMINI_API_KEY backend environment me missing hai' 
+      return res.json({ 
+        success: true, 
+        reply: 'Backend error: GEMINI_API_KEY Render par configured nahi hai.' 
       });
     }
 
-    // Google Gemini 3.8 Flash Endpoint with fast token limit
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+    // Google Gemini 3.8 Flash - Header auth se fast request
+    const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
 
-    const response = await axios.post(
-      endpoint,
-      {
+    const response = await axios({
+      method: 'POST',
+      url: endpoint,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey.trim()
+      },
+      data: {
         contents: [
           {
-            parts: [{ text: `Aap Jeevan Sahayak app ke smart AI assistant hain. User ke sawal ka simple, helpful aur concise Hindi/Hinglish me jawab dein: ${prompt}` }]
+            role: 'user',
+            parts: [{ text: `Aap Jeevan Sahayak AI hain. 2-3 short sentences me helpful jawab dein: ${prompt}` }]
           }
         ],
         generationConfig: {
-          maxOutputTokens: 300,
+          maxOutputTokens: 200,
           temperature: 0.7
         }
       },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 20000
-      }
-    );
+      timeout: 35000 // Extended timeout
+    });
 
     const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!reply) {
-      return res.json({ 
-        success: true, 
-        reply: 'Main abhi aapke sawal ko process nahi kar paya, kripya dubara poochein.' 
-      });
+      return res.json({ success: true, reply: 'AI response empty aaya. Dobara poochein.' });
     }
 
     return res.json({ success: true, reply });
 
   } catch (err) {
-    console.error('Gemini API Error:', err.response?.data?.error?.message || err.message);
+    const status = err.response?.status;
+    const errorMsg = err.response?.data?.error?.message || err.message;
+    console.error('Gemini API Error:', status, errorMsg);
 
-    // Friendly fallback response taaki screen par error pop-up na aaye
     return res.json({ 
       success: true, 
-      reply: 'Abhi AI network busy chal raha hai. Aap apna sawal 10 second baad dobara bhej kar dekhein.' 
+      reply: `Gemini Error (${status || 'Network'}): ${errorMsg}` 
     });
   }
 });
 
 module.exports = router;
-      
