@@ -217,12 +217,12 @@ const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 
 mongoose.connect(MONGO_URI)
   .then(() => {
-    console.log('✅ MongoDB Connected Successfully');[span_2](start_span)[span_2](end_span)
+    console.log('✅ MongoDB Connected Successfully');
     app.listen(PORT, () => {
-      console.log(`🚀 Server listening on port ${PORT}`);[span_3](start_span)[span_3](end_span)
+      console.log(`🚀 Server listening on port ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error('❌ MongoDB Connection Error:', err.message);[span_4](start_span)[span_4](end_span)
+    console.error('❌ MongoDB Connection Error:', err.message);
   });
-    
+              
