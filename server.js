@@ -7,11 +7,10 @@ const app = express();
 
 // Middleware
 app.use(cors());
-// Body limit badhai hai taaki PDF / notes aur full appData upload ho sakein[span_3](start_span)[span_3](end_span)
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
-// Routes Import (Sirf ek baar)[span_4](start_span)[span_4](end_span)
+// Routes Import
 const authRoutes = require('./routes/authRoutes');
 let materialRoutes;
 try {
@@ -27,7 +26,7 @@ try {
   console.log('aiRoutes not loaded yet');
 }
 
-// Routes Use[span_5](start_span)[span_5](end_span)
+// Routes Use
 app.use('/api/auth', authRoutes);
 if (materialRoutes) {
   app.use('/api/materials', materialRoutes);
@@ -37,7 +36,7 @@ if (aiRoutes) {
 }
 
 // ============================================================================
-// 🚀 UNIVERSAL USER DATA SYNC & ADMIN FULL INSPECTOR ROUTES (NO EXTRA FILE NEEDED)[span_6](start_span)[span_6](end_span)
+// 🚀 UNIVERSAL USER DATA SYNC & ADMIN FULL INSPECTOR ROUTES
 // ============================================================================
 
 const UserAppDataSchema = new mongoose.Schema(
@@ -47,7 +46,7 @@ const UserAppDataSchema = new mongoose.Schema(
     email: { type: String, index: true },
     name: { type: String },
     userProfile: { type: mongoose.Schema.Types.Mixed, default: {} },
-    appData: { type: mongoose.Schema.Types.Mixed, default: {} }, // Tasks, Expenses, Health, Notes, Vault, Udhari, etc.[span_7](start_span)[span_7](end_span)
+    appData: { type: mongoose.Schema.Types.Mixed, default: {} },
     lastSyncedAt: { type: Date, default: Date.now }
   },
   { timestamps: true, strict: false }
@@ -56,12 +55,11 @@ const UserAppDataSchema = new mongoose.Schema(
 const UserAppData =
   mongoose.models.UserAppData || mongoose.model('UserAppData', UserAppDataSchema);
 
-// 1. Save / Sync User's Complete Browser Data to MongoDB[span_8](start_span)[span_8](end_span)
+// 1. Save / Sync User's Complete Browser Data to MongoDB
 app.post('/api/user/sync', async (req, res) => {
   try {
     const { userId, phone, email, name, userProfile, appData } = req.body;
 
-    // Identify user uniquely by userId, phone, or email[span_9](start_span)[span_9](end_span)
     const query = {};
     if (userId) query.userId = String(userId);
     else if (phone) query.phone = String(phone);
@@ -89,7 +87,6 @@ app.post('/api/user/sync', async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Also try updating main 'users' collection directly so existing /api/auth admin routes also get appData[span_10](start_span)[span_10](end_span)
     try {
       const usersCollection = mongoose.connection.collection('users');
       const userFilter = [];
@@ -105,9 +102,7 @@ app.post('/api/user/sync', async (req, res) => {
           { $set: { appData: appData || {}, lastSyncedAt: new Date() } }
         );
       }
-    } catch (innerErr) {
-      // Ignore if collection name differs[span_11](start_span)[span_11](end_span)
-    }
+    } catch (innerErr) {}
 
     return res.status(200).json({
       success: true,
@@ -120,7 +115,7 @@ app.post('/api/user/sync', async (req, res) => {
   }
 });
 
-// 2. Fetch Single User's Synced Data (When user logs in on any device)[span_12](start_span)[span_12](end_span)
+// 2. Fetch Single User's Synced Data
 app.get('/api/user/sync/:identifier', async (req, res) => {
   try {
     const id = req.params.identifier;
@@ -137,12 +132,11 @@ app.get('/api/user/sync/:identifier', async (req, res) => {
   }
 });
 
-// 3. Admin Endpoint: Get ALL Registered Users + Their Complete App Data (Tasks, Expenses, Health, Notes, etc.)[span_13](start_span)[span_13](end_span)
+// 3. Admin Endpoint: Get ALL Registered Users + Their Complete App Data
 app.get('/api/admin/all-user-data', async (req, res) => {
   try {
     const syncedDataList = await UserAppData.find({}).sort({ lastSyncedAt: -1 }).lean();
 
-    // Also fetch all registered users from the 'users' collection to merge profile + synced data[span_14](start_span)[span_14](end_span)
     let registeredUsers = [];
     try {
       registeredUsers = await mongoose.connection.collection('users').find({}).toArray();
@@ -161,7 +155,7 @@ app.get('/api/admin/all-user-data', async (req, res) => {
   }
 });
 
-// 4. Admin Cascade Deletion Endpoint: Delete User Profile & All Synced AppData Permanently
+// 4. Admin Cascade Deletion Endpoint
 app.delete('/api/auth/admin/user/:id', async (req, res) => {
   try {
     const userId = req.params.id;
@@ -177,7 +171,6 @@ app.delete('/api/auth/admin/user/:id', async (req, res) => {
       }
     }
 
-    // If user found in collection, delete matching records from UserAppData[span_15](start_span)[span_15](end_span)
     if (deletedUser) {
       await UserAppData.deleteMany({
         $or: [
@@ -187,7 +180,6 @@ app.delete('/api/auth/admin/user/:id', async (req, res) => {
         ]
       });
     } else {
-      // Fallback matching by ID, phone, or email string directly
       await UserAppData.deleteMany({
         $or: [
           { userId: String(userId) },
@@ -196,7 +188,6 @@ app.delete('/api/auth/admin/user/:id', async (req, res) => {
         ]
       });
       
-      // Also clean up users collection if id was passed as phone/email
       await usersCollection.deleteOne({
         $or: [
           { phone: String(userId) },
@@ -215,23 +206,23 @@ app.delete('/api/auth/admin/user/:id', async (req, res) => {
   }
 });
 
-// Health Check Route[span_16](start_span)[span_16](end_span)
+// Health Check Route
 app.get('/', (req, res) => {
   res.send('Jeevan Sahayak Backend is Running Successfully 🚀');
 });
 
-// Database Connection[span_17](start_span)[span_17](end_span)
+// Database Connection
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 
 mongoose.connect(MONGO_URI)
   .then(() => {
-    console.log('✅ MongoDB Connected Successfully');[span_18](start_span)[span_18](end_span)
+    console.log('✅ MongoDB Connected Successfully');[span_2](start_span)[span_2](end_span)
     app.listen(PORT, () => {
-      console.log(`🚀 Server listening on port ${PORT}`);[span_19](start_span)[span_19](end_span)
+      console.log(`🚀 Server listening on port ${PORT}`);[span_3](start_span)[span_3](end_span)
     });
   })
   .catch((err) => {
-    console.error('❌ MongoDB Connection Error:', err.message);[span_20](start_span)[span_20](end_span)
+    console.error('❌ MongoDB Connection Error:', err.message);[span_4](start_span)[span_4](end_span)
   });
-                                                    
+    
