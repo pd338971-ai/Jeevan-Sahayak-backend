@@ -23,14 +23,14 @@ router.post('/send-otp', async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone || phone.length !== 10) {
-      return res.status(400).json({ success: false, message: 'कृपया 10 अंकों का मान्य मोबाइल नंबर दर्ज करें' });
+      return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit mobile number' });
     }
 
-    // 6-अंकों का OTP
+    // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     otpStore[phone] = {
       otp: otp,
-      expiresAt: Date.now() + 5 * 60 * 1000 // 5 मिनट एक्सपायरी
+      expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes expiry
     };
 
     console.log(`🔑 OTP for ${phone}: ${otp}`);
@@ -38,7 +38,7 @@ router.post('/send-otp', async (req, res) => {
     const apiKey = process.env.FAST2SMS_API_KEY;
     if (apiKey) {
       try {
-        // route: 'q' se direct phone par Quick SMS jayega bina domain verification ke
+        // Route 'q' sends direct Quick SMS to the phone without domain verification
         const response = await axios.get('https://www.fast2sms.com/dev/bulkV2', {
           params: {
             authorization: apiKey,
@@ -57,11 +57,11 @@ router.post('/send-otp', async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'OTP आपके मोबाइल नंबर पर भेज दिया गया है',
+      message: 'OTP has been successfully sent to your mobile number',
       devOtp: otp
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'OTP भेजने में त्रुटि' });
+    return res.status(500).json({ success: false, message: 'Error while sending OTP' });
   }
 });
 
@@ -73,16 +73,16 @@ router.post('/register', async (req, res) => {
     const { name, phone, password, otp, gender, dob } = req.body;
 
     if (!name || !phone || !password || !otp) {
-      return res.status(400).json({ success: false, message: 'सभी जानकारी भरना अनिवार्य है' });
+      return res.status(400).json({ success: false, message: 'All fields are mandatory' });
     }
 
     if (!otpStore[phone] || otpStore[phone].otp !== otp) {
-      return res.status(400).json({ success: false, message: 'गलत या एक्सपायर्ड OTP' });
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
     }
 
     const existingUser = await User.findOne({ phone });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: 'यह मोबाइल नंबर पहले से रजिस्टर है' });
+      return res.status(400).json({ success: false, message: 'This mobile number is already registered' });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -99,9 +99,9 @@ router.post('/register', async (req, res) => {
     await newUser.save();
     delete otpStore[phone];
 
-    return res.status(201).json({ success: true, message: 'प्रोफ़ाइल सफलतापूर्वक बन गई!' });
+    return res.status(201).json({ success: true, message: 'Profile created successfully!' });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'रजिस्ट्रेशन विफल', error: err.message });
+    return res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }
 });
 
@@ -114,12 +114,12 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ phone });
 
     if (!user) {
-      return res.status(400).json({ success: false, message: 'यह नंबर रजिस्टर नहीं है' });
+      return res.status(400).json({ success: false, message: 'This number is not registered' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ success: false, message: 'गलत पासवर्ड' });
+      return res.status(400).json({ success: false, message: 'Incorrect password' });
     }
 
     const token = jwt.sign(
@@ -134,7 +134,7 @@ router.post('/login', async (req, res) => {
       user: { id: user._id, name: user.name, phone: user.phone }
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'लॉगिन विफल' });
+    return res.status(500).json({ success: false, message: 'Login failed' });
   }
 });
 
@@ -150,7 +150,7 @@ router.post('/admin/login', (req, res) => {
     const token = jwt.sign({ role: 'admin' }, process.env.JWT_SECRET || 'jeevan_secret_2026', { expiresIn: '1d' });
     return res.json({ success: true, token });
   }
-  return res.status(401).json({ success: false, message: 'गलत एडमिन क्रेडेंशियल्स' });
+  return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
 });
 
 // -----------------------------------------------------------
@@ -165,45 +165,18 @@ router.get('/admin/dashboard', async (req, res) => {
       users
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'डेटा लोड करने में त्रुटि' });
+    return res.status(500).json({ success: false, message: 'Error loading dashboard data' });
   }
 });
 
 // -----------------------------------------------------------
-// 6. PASSWORD RESET VIA OTP
-// -----------------------------------------------------------
-router.post('/reset-password', async (req, res) => {
-  try {
-    const { phone, otp, newPassword } = req.body;
-
-    if (!otpStore[phone] || otpStore[phone].otp !== otp) {
-      return res.status(400).json({ success: false, message: 'गलत या एक्सपायर्ड OTP' });
-    }
-
-    const user = await User.findOne({ phone });
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'यूज़र नहीं मिला' });
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
-    await user.save();
-
-    delete otpStore[phone];
-    return res.json({ success: true, message: 'पासवर्ड सफलतापूर्वक बदल दिया गया!' });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'पासवर्ड रीसेट विफल' });
-  }
-});
-
-// -----------------------------------------------------------
-// 7. TWO-WAY DATA SYNC
+// 6. TWO-WAY DATA SYNC
 // -----------------------------------------------------------
 router.post('/sync', async (req, res) => {
   try {
     const { phone, clientData } = req.body;
     const user = await User.findOne({ phone });
-    if (!user) return res.status(404).json({ success: false, message: 'यूज़र नहीं मिला' });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     if (clientData) {
       user.syncedData = {
@@ -216,26 +189,25 @@ router.post('/sync', async (req, res) => {
 
     return res.json({ success: true, serverData: user.syncedData });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'सिंक विफल' });
+    return res.status(500).json({ success: false, message: 'Sync failed' });
   }
 });
 
 // -----------------------------------------------------------
-// 8. PUSH NOTIFICATION SUBSCRIBE
+// 7. PUSH NOTIFICATION SUBSCRIBE
 // -----------------------------------------------------------
 router.post('/push/subscribe', async (req, res) => {
   try {
     const { phone, subscription } = req.body;
     await User.findOneAndUpdate({ phone }, { pushSubscription: subscription });
-    return res.json({ success: true, message: 'पुश टोकन सुरक्षित हो गया' });
+    return res.json({ success: true, message: 'Push token saved successfully' });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'टोकन सेव करने में विफल' });
+    return res.status(500).json({ success: false, message: 'Failed to save push token' });
   }
 });
 
-module.exports = router;
 // -----------------------------------------------------------
-// DELETE USER BY ADMIN
+// 8. DELETE USER BY ADMIN
 // -----------------------------------------------------------
 router.delete('/admin/user/:id', async (req, res) => {
   try {
@@ -243,16 +215,17 @@ router.delete('/admin/user/:id', async (req, res) => {
     const deletedUser = await User.findByIdAndDelete(id);
 
     if (!deletedUser) {
-      return res.status(404).json({ success: false, message: 'User nahi mila' });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    return res.json({ success: true, message: 'User successfully delete ho gaya' });
+    return res.json({ success: true, message: 'User successfully deleted' });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'User delete karne me error aaya', error: err.message });
+    return res.status(500).json({ success: false, message: 'Error occurred while deleting user', error: err.message });
   }
 });
+
 // -----------------------------------------------------------
-// RESET PASSWORD (OTP Verification + Update Password)
+// 9. RESET PASSWORD (OTP Verification + Update Password)
 // -----------------------------------------------------------
 router.post('/reset-password', async (req, res) => {
   try {
@@ -261,27 +234,27 @@ router.post('/reset-password', async (req, res) => {
     if (!phone || !otp || !newPassword) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Phone number, OTP aur naya password sabhi zaroori hain' 
+        message: 'Phone number, OTP, and new password are all required' 
       });
     }
 
-    // 1. OTP check karein (jo memory/store me hai)
+    // 1. Check OTP (stored in memory/store)
     const storedOtpData = otpStore ? otpStore[phone] : null;
     
-    // Agar development/testing OTP match kare ya store ka OTP valid ho
+    // Check if the development/testing OTP matches or the stored OTP is valid
     const isValidOtp = (storedOtpData && storedOtpData.otp == otp) || (otp === '123456');
 
     if (!isValidOtp) {
-      return res.status(400).json({ success: false, message: 'Galat ya expired OTP' });
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
     }
 
-    // 2. User find karein
+    // 2. Find User
     const user = await User.findOne({ phone });
     if (!user) {
-      return res.status(404).json({ success: false, message: 'Yeh mobile number registered nahi hai' });
+      return res.status(404).json({ success: false, message: 'This mobile number is not registered' });
     }
 
-    // 3. Password update karein (Agar bcrypt use kar rahe hain toh hash karke, warna direct)
+    // 3. Update Password (Hash using bcrypt if available, otherwise save direct)
     if (typeof bcrypt !== 'undefined' && bcrypt.hash) {
       user.password = await bcrypt.hash(newPassword, 10);
     } else {
@@ -290,22 +263,24 @@ router.post('/reset-password', async (req, res) => {
 
     await user.save();
 
-    // OTP verify hone ke baad store se remove karein
+    // Remove OTP from store after successful verification
     if (otpStore && otpStore[phone]) {
       delete otpStore[phone];
     }
 
     return res.json({ 
       success: true, 
-      message: 'Password successfully badal gaya hai! Ab naye password se login karein.' 
+      message: 'Password successfully changed! You can now log in with your new password.' 
     });
   } catch (err) {
     console.error('Reset Password Error:', err.message);
     return res.status(500).json({ 
       success: false, 
-      message: 'Password reset karne me dikkat aayi', 
+      message: 'An error occurred while resetting the password', 
       error: err.message 
     });
   }
-});
-        
+}); 
+
+module.exports = router;
+  
