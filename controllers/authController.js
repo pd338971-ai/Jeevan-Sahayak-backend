@@ -8,16 +8,16 @@ exports.sendOtp = async (req, res) => {
     const { phone } = req.body;
 
     if (!phone || phone.length !== 10) {
-      return res.status(400).json({ success: false, message: 'कृपया 10 अंकों का फोन नंबर दर्ज करें' });
+      return res.status(400).json({ success: false, message: 'Please enter a 10-digit phone number' });
     }
 
     const existingUser = await User.findOne({ phone, isVerified: true });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: 'यह फोन नंबर पहले से रजिस्टर्ड है' });
+      return res.status(400).json({ success: false, message: 'This phone number is already registered' });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 मिनट वैधता
+    const otpExpire = new Date(Date.now() + 10 * 60 * 1000); //10 minutes validity
 
     let user = await User.findOne({ phone });
     if (!user) {
@@ -34,8 +34,8 @@ exports.sendOtp = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'OTP सफलतापूर्वक भेजा गया',
-      devOtp: otp // डेवलपमेंट टेस्टिंग के लिए
+      message: 'OTP has been sent successfully',
+      devOtp: otp // For development testing
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -48,16 +48,16 @@ exports.registerUserWithOtp = async (req, res) => {
     const { name, gender, dob, phone, password, otp } = req.body;
 
     if (!name || !gender || !dob || !phone || !password || !otp) {
-      return res.status(400).json({ success: false, message: 'कृपया सभी आवश्यक फ़ील्ड्स और OTP भरें' });
+      return res.status(400).json({ success: false, message: 'Please fill in all the required fields and OTP' });
     }
 
     const user = await User.findOne({ phone });
     if (!user) {
-      return res.status(400).json({ success: false, message: 'कृपया पहले OTP के लिए अनुरोध करें' });
+      return res.status(400).json({ success: false, message: 'Please request an OTP first' });
     }
 
     if (user.otp !== otp || user.otpExpire < new Date()) {
-      return res.status(400).json({ success: false, message: 'अमान्य या समाप्त हो चुका OTP!' });
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP!' });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -74,7 +74,7 @@ exports.registerUserWithOtp = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'रजिस्ट्रेशन सफलतापूर्वक पूरा हुआ!',
+      message: 'Registration completed successfully!',
       user: {
         id: user._id,
         name: user.name,
@@ -95,17 +95,17 @@ exports.loginUser = async (req, res) => {
     const { phone, password } = req.body;
 
     if (!phone || !password) {
-      return res.status(400).json({ success: false, message: 'फोन नंबर और पासवर्ड अनिवार्य हैं' });
+      return res.status(400).json({ success: false, message: 'Phone number and password are mandatory' });
     }
 
     const user = await User.findOne({ phone, isVerified: true });
     if (!user) {
-      return res.status(400).json({ success: false, message: 'खाता मौजूद नहीं है या वेरिफाइड नहीं है' });
+      return res.status(400).json({ success: false, message: 'Account does not exist or is not verified' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ success: false, message: 'गलत पासवर्ड!' });
+      return res.status(400).json({ success: false, message: 'Incorrect password!' });
     }
 
     const token = jwt.sign(
@@ -148,7 +148,7 @@ exports.adminLogin = async (req, res) => {
       return res.status(200).json({ success: true, token, role: 'admin' });
     }
 
-    return res.status(401).json({ success: false, message: 'अमान्य Admin क्रेडेंशियल्स!' });
+    return res.status(401).json({ success: false, message: 'Invalid admin credentials!' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -190,7 +190,7 @@ exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
     await User.findByIdAndDelete(id);
-    res.status(200).json({ success: true, message: 'यूज़र सफलतापूर्वक हटा दिया गया' });
+    res.status(200).json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
