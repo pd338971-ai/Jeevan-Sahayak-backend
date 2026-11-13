@@ -1,4 +1,4 @@
-Require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -71,7 +71,58 @@ const UserAppData =
   mongoose.models.UserAppData || mongoose.model('UserAppData', UserAppDataSchema);
 
 // ============================================================================
-// 💳 PAYMENT & SUBSCRIPTION ROUTES
+// 🛡️ PLAN PROTECTION MIDDLEWARE
+// ============================================================================
+const checkPlan = (requiredPlan) => {
+  const planLevels = { 'free': 0, 'basic': 1, 'standard': 2, 'pro': 3 };
+
+  return async (req, res, next) => {
+    try {
+      // Frontend se user identifier headers, query ya body mein pass hoga
+      const identifier = req.headers['user-id'] || req.query.userId || req.body.userId;
+      if (!identifier) {
+        return res.status(401).json({ success: false, message: "Authentication identifier missing" });
+      }
+
+      const userRecord = await UserAppData.findOne({
+        $or: [{ userId: String(identifier) }, { phone: String(identifier) }, { email: String(identifier).toLowerCase() }]
+      });
+
+      const userPlan = userRecord?.subscription?.plan || 'free';
+      const status = userRecord?.subscription?.status || 'inactive';
+      const expiryDate = userRecord?.subscription?.expiryDate;
+      const isExpired = expiryDate && new Date() > new Date(expiryDate);
+
+      // Check if subscription is active and not expired
+      if (status !== 'active' || isExpired) {
+        return res.status(403).json({ 
+          success: false, 
+          message: "Subscription has expired or is inactive. Please upgrade.", 
+          upgradeRequired: true 
+        });
+      }
+
+      // Check tier hierarchy (Pro can access Basic/Standard, Standard can access Basic, etc.)
+      if (planLevels[userPlan] >= planLevels[requiredPlan]) {
+        req.currentUserPlan = userPlan;
+        next();
+      } else {
+        return res.status(403).json({ 
+          success: false, 
+          message: `This feature requires a ${requiredPlan.toUpperCase()} plan or higher.`,
+          upgradeRequired: true,
+          currentPlan: userPlan,
+          requiredPlan: requiredPlan
+        });
+      }
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  };
+};
+
+// ============================================================================
+// 💳 PAYMENT & SUBSCRIPTION ROUTES (₹99, ₹199, ₹299)
 // ============================================================================
 
 // 1. Create Razorpay Order Route
@@ -120,7 +171,6 @@ app.post('/api/payment/verify', async (req, res) => {
         return res.status(400).json({ success: false, message: "User identifier required for activation" });
       }
 
-      // Update or create user subscription in UserAppData
       const updatedRecord = await UserAppData.findOneAndUpdate(
         query,
         {
@@ -147,58 +197,28 @@ app.post('/api/payment/verify', async (req, res) => {
 });
 
 // ============================================================================
-// 🛡️ PLAN PROTECTION MIDDLEWARE
+// 🔒 EXAMPLE PROTECTED ROUTES USING checkPlan MIDDLEWARE
 // ============================================================================
-const checkPlan = (requiredPlan) => {
-  const planLevels = { 'free': 0, 'basic': 1, 'standard': 2, 'pro': 3 };
 
-  return async (req, res, next) => {
-    try {
-      const identifier = req.headers['user-id'] || req.query.userId || req.body.userId;
-      if (!identifier) {
-        return res.status(401).json({ success: false, message: "Authentication identifier missing" });
-      }
+// Example 1: Basic or higher required
+app.get('/api/premium/basic-feature', checkPlan('basic'), (req, res) => {
+  res.json({ success: true, message: "Welcome to Basic/Standard/Pro Feature!" });
+});
 
-      const userRecord = await UserAppData.findOne({
-        $or: [{ userId: String(identifier) }, { phone: String(identifier) }, { email: String(identifier).toLowerCase() }]
-      });
+// Example 2: Standard or higher required
+app.get('/api/premium/standard-feature', checkPlan('standard'), (req, res) => {
+  res.json({ success: true, message: "Welcome to Standard/Pro Feature!" });
+});
 
-      const userPlan = userRecord?.subscription?.plan || 'free';
-      const status = userRecord?.subscription?.status || 'inactive';
-      const expiryDate = userRecord?.subscription?.expiryDate;
-      const isExpired = expiryDate && new Date() > new Date(expiryDate);
-
-      if (status !== 'active' || isExpired) {
-        return res.status(403).json({ 
-          success: false, 
-          message: "Subscription has expired or is inactive. Please upgrade.", 
-          upgradeRequired: true 
-        });
-      }
-
-      if (planLevels[userPlan] >= planLevels[requiredPlan]) {
-        req.currentUserPlan = userPlan;
-        next();
-      } else {
-        return res.status(403).json({ 
-          success: false, 
-          message: `This feature requires a ${requiredPlan.toUpperCase()} plan or higher.`,
-          upgradeRequired: true,
-          currentPlan: userPlan,
-          requiredPlan: requiredPlan
-        });
-      }
-    } catch (err) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  };
-};
+// Example 3: Pro only required
+app.get('/api/premium/pro-feature', checkPlan('pro'), (req, res) => {
+  res.json({ success: true, message: "Welcome to Exclusive Pro Feature!" });
+});
 
 // ============================================================================
 // 🚀 UNIVERSAL USER DATA SYNC & ADMIN FULL INSPECTOR ROUTES
 // ============================================================================
 
-// 1. Save / Sync User's Complete Browser Data to MongoDB
 app.post('/api/user/sync', async (req, res) => {
   try {
     const { userId, phone, email, name, userProfile, appData } = req.body;
@@ -242,7 +262,6 @@ app.post('/api/user/sync', async (req, res) => {
   }
 });
 
-// 2. Fetch Single User's Synced Data
 app.get('/api/user/sync/:identifier', async (req, res) => {
   try {
     const id = req.params.identifier;
@@ -259,7 +278,6 @@ app.get('/api/user/sync/:identifier', async (req, res) => {
   }
 });
 
-// 3. Admin Endpoint: Get ALL Registered Users + Their Complete App Data
 app.get('/api/admin/all-user-data', async (req, res) => {
   try {
     const syncedDataList = await UserAppData.find({}).sort({ lastSyncedAt: -1 }).lean();
@@ -282,7 +300,6 @@ app.get('/api/admin/all-user-data', async (req, res) => {
   }
 });
 
-// 4. Admin Cascade Deletion Endpoint
 app.delete('/api/auth/admin/user/:id', async (req, res) => {
   try {
     const userId = req.params.id;
