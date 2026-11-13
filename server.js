@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 
@@ -12,11 +13,13 @@ app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
-// Razorpay Initialization
+// Razorpay & Gemini AI Initialization
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Routes Import
 const authRoutes = require('./routes/authRoutes');
@@ -44,7 +47,7 @@ if (aiRoutes) {
 }
 
 // ============================================================================
-// 🚀 USER APP DATA SYNC & SUBSCRIPTION SCHEMA
+// 🚀 USER APP DATA SYNC & 14-DAY TRIAL SUBSCRIPTION SCHEMA
 // ============================================================================
 
 const UserAppDataSchema = new mongoose.Schema(
@@ -54,9 +57,13 @@ const UserAppDataSchema = new mongoose.Schema(
     email: { type: String, index: true },
     name: { type: String },
     subscription: {
-      plan: { type: String, enum: ['free', 'basic', 'standard', 'pro'], default: 'free' },
-      status: { type: String, enum: ['active', 'expired', 'pending', 'inactive'], default: 'inactive' },
-      expiryDate: { type: Date },
+      plan: { type: String, enum: ['free', 'basic', 'standard', 'pro'], default: 'pro' },
+      status: { type: String, enum: ['active', 'expired', 'pending', 'inactive'], default: 'active' },
+      expiryDate: { 
+        type: Date, 
+        default: () => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // Default 14-day Pro Trial
+      },
+      isTrial: { type: Boolean, default: true },
       razorpayOrderId: { type: String },
       razorpayPaymentId: { type: String }
     },
@@ -71,6 +78,80 @@ const UserAppData =
   mongoose.models.UserAppData || mongoose.model('UserAppData', UserAppDataSchema);
 
 // ============================================================================
+// 📚 STUDY MATERIAL SCHEMA & AI AUTO-CATEGORIZATION ROUTE
+// ============================================================================
+
+const StudyMaterialSchema = new mongoose.Schema({
+  studentClass: { type: String, index: true }, // Class 1 to 12
+  stream: { type: String },                    // Science, Commerce, Arts, General
+  subject: { type: String, index: true },      // Physics, Chemistry, Math, etc.
+  chapterName: { type: String },
+  documentType: { type: String },              // Notes, Question Paper, Formula Sheet
+  title: { type: String },
+  fileUrl: { type: String },
+  uploadedAt: { type: Date, default: Date.now }
+});
+
+const StudyMaterial = mongoose.models.StudyMaterial || mongoose.model('StudyMaterial', StudyMaterialSchema);
+
+// AI Smart Upload Route
+app.post('/api/study/upload-smart', async (req, res) => {
+  try {
+    const { title, content, fileUrl } = req.body;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const prompt = `Analyze the following study material title and content snippet. Extract details in strict JSON format with keys: "studentClass" (string value between "1" to "12"), "stream" (e.g., Science PCM, Commerce, Arts, or General), "subject" (e.g., Physics, Chemistry, Mathematics, Biology, English), "chapterName", and "documentType" (Notes, Question Paper, Formula Sheet, or Assignment).
+    
+    Title: ${title}
+    Content: ${content ? content.substring(0, 1000) : "N/A"}`;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    
+    const jsonStartIndex = responseText.indexOf('{');
+    const jsonEndIndex = responseText.lastIndexOf('}');
+    const parsedData = JSON.parse(responseText.substring(jsonStartIndex, jsonEndIndex + 1));
+
+    const newMaterial = new StudyMaterial({
+      studentClass: parsedData.studentClass || "12",
+      stream: parsedData.stream || "Science PCM",
+      subject: parsedData.subject || "General",
+      chapterName: parsedData.chapterName || "Unclassified",
+      documentType: parsedData.documentType || "Notes",
+      title: title,
+      fileUrl: fileUrl
+    });
+
+    await newMaterial.save();
+
+    res.status(200).json({
+      success: true,
+      message: "AI successfully detected and categorized the study material! 🚀",
+      extractedDetails: parsedData,
+      savedRecord: newMaterial
+    });
+  } catch (error) {
+    console.error('AI Auto-Classification Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Fetch Study Materials by Class and Subject
+app.get('/api/study/materials/:class/:subject', async (req, res) => {
+  try {
+    const { studentClass, subject } = req.params;
+    const query = {};
+    if (studentClass && studentClass !== 'all') query.studentClass = studentClass;
+    if (subject && subject !== 'all') query.subject = new RegExp(subject, 'i');
+
+    const materials = await StudyMaterial.find(query).sort({ uploadedAt: -1 }).lean();
+    res.json({ success: true, count: materials.length, data: materials });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================================
 // 🛡️ PLAN PROTECTION MIDDLEWARE
 // ============================================================================
 const checkPlan = (requiredPlan) => {
@@ -78,7 +159,6 @@ const checkPlan = (requiredPlan) => {
 
   return async (req, res, next) => {
     try {
-      // Frontend se user identifier headers, query ya body mein pass hoga
       const identifier = req.headers['user-id'] || req.query.userId || req.body.userId;
       if (!identifier) {
         return res.status(401).json({ success: false, message: "Authentication identifier missing" });
@@ -93,16 +173,14 @@ const checkPlan = (requiredPlan) => {
       const expiryDate = userRecord?.subscription?.expiryDate;
       const isExpired = expiryDate && new Date() > new Date(expiryDate);
 
-      // Check if subscription is active and not expired
       if (status !== 'active' || isExpired) {
         return res.status(403).json({ 
           success: false, 
-          message: "Subscription has expired or is inactive. Please upgrade.", 
+          message: "Subscription or trial has expired. Please upgrade.", 
           upgradeRequired: true 
         });
       }
 
-      // Check tier hierarchy (Pro can access Basic/Standard, Standard can access Basic, etc.)
       if (planLevels[userPlan] >= planLevels[requiredPlan]) {
         req.currentUserPlan = userPlan;
         next();
@@ -125,19 +203,17 @@ const checkPlan = (requiredPlan) => {
 // 💳 PAYMENT & SUBSCRIPTION ROUTES (₹99, ₹199, ₹299)
 // ============================================================================
 
-// 1. Create Razorpay Order Route
 app.post('/api/payment/create-order', async (req, res) => {
   try {
     const { plan, amount } = req.body; 
     
-    // Exact pricing security validation (Basic: 99, Standard: 199, Pro: 299)
     const validPlans = { 'basic': 99, 'standard': 199, 'pro': 299 };
     if (!validPlans[plan] || validPlans[plan] !== Number(amount)) {
       return res.status(400).json({ success: false, message: "Invalid plan or amount mismatch" });
     }
 
     const options = {
-      amount: Number(amount) * 100, // Razorpay takes paise (₹99 = 9900 paise)
+      amount: Number(amount) * 100, // Razorpay paise conversion
       currency: "INR",
       receipt: `receipt_${plan}_${Date.now()}`
     };
@@ -150,7 +226,6 @@ app.post('/api/payment/create-order', async (req, res) => {
   }
 });
 
-// 2. Verify Payment & Activate Plan Route
 app.post('/api/payment/verify', async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, plan, userId, phone, email } = req.body;
@@ -178,6 +253,7 @@ app.post('/api/payment/verify', async (req, res) => {
             "subscription.plan": plan,
             "subscription.status": "active",
             "subscription.expiryDate": expiry,
+            "subscription.isTrial": false,
             "subscription.razorpayOrderId": razorpay_order_id,
             "subscription.razorpayPaymentId": razorpay_payment_id,
             lastSyncedAt: new Date()
@@ -194,25 +270,6 @@ app.post('/api/payment/verify', async (req, res) => {
     console.error('Payment Verification Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
-});
-
-// ============================================================================
-// 🔒 EXAMPLE PROTECTED ROUTES USING checkPlan MIDDLEWARE
-// ============================================================================
-
-// Example 1: Basic or higher required
-app.get('/api/premium/basic-feature', checkPlan('basic'), (req, res) => {
-  res.json({ success: true, message: "Welcome to Basic/Standard/Pro Feature!" });
-});
-
-// Example 2: Standard or higher required
-app.get('/api/premium/standard-feature', checkPlan('standard'), (req, res) => {
-  res.json({ success: true, message: "Welcome to Standard/Pro Feature!" });
-});
-
-// Example 3: Pro only required
-app.get('/api/premium/pro-feature', checkPlan('pro'), (req, res) => {
-  res.json({ success: true, message: "Welcome to Exclusive Pro Feature!" });
 });
 
 // ============================================================================
@@ -234,25 +291,38 @@ app.post('/api/user/sync', async (req, res) => {
       });
     }
 
+    // Check if user already exists to preserve active trial/subscription
+    const existingUser = await UserAppData.findOne(query);
+
+    const updateData = {
+      ...(userId && { userId: String(userId) }),
+      ...(phone && { phone: String(phone) }),
+      ...(email && { email: String(email).toLowerCase() }),
+      ...(name && { name }),
+      ...(userProfile && { userProfile }),
+      appData: appData || {},
+      lastSyncedAt: new Date()
+    };
+
+    // If brand new user, initialize 14-day Pro trial automatically
+    if (!existingUser) {
+      updateData.subscription = {
+        plan: 'pro',
+        status: 'active',
+        expiryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        isTrial: true
+      };
+    }
+
     const updatedRecord = await UserAppData.findOneAndUpdate(
       query,
-      {
-        $set: {
-          ...(userId && { userId: String(userId) }),
-          ...(phone && { phone: String(phone) }),
-          ...(email && { email: String(email).toLowerCase() }),
-          ...(name && { name }),
-          ...(userProfile && { userProfile }),
-          appData: appData || {},
-          lastSyncedAt: new Date()
-        }
-      },
+      { $set: updateData },
       { upsert: true, new: true }
     );
 
     return res.status(200).json({
       success: true,
-      message: 'All user app data synced to cloud & admin successfully!',
+      message: 'All user app data synced successfully!',
       lastSyncedAt: updatedRecord.lastSyncedAt,
       subscription: updatedRecord.subscription
     });
@@ -342,7 +412,7 @@ app.delete('/api/auth/admin/user/:id', async (req, res) => {
 
     return res.status(200).json({ 
       success: true, 
-      message: 'User profile and all synced app data deleted permanently from server.' 
+      message: 'User profile and all synced app data deleted permanently.' 
     });
   } catch (error) {
     console.log('Delete User Error:', error);
@@ -369,3 +439,4 @@ mongoose.connect(MONGO_URI)
   .catch((err) => {
     console.log('❌ MongoDB Connection Error:', err.message);
   });
+    
